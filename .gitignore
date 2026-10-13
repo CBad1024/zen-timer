@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Environments
+.venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Build output
+dist/
+build/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+
+# Local config
+.env
+.claude/settings.local.json
