@@ -199,6 +199,8 @@ class NightSky(Widget):
 
     # 0.0 = full moon, 1.0 = new moon
     progress = reactive(0.0, layout=False, repaint=False)
+    # False = waning (dark side grows from the right), True = waxing (lit side grows from the right)
+    waxing = reactive(False, layout=False, repaint=False)
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -209,7 +211,7 @@ class NightSky(Widget):
         self._static: list[list[RGB]] = []
         self._sky_mask: list[list[bool]] = []
         self._quad: list[list[RGB]] = []
-        self._moon_step = -1
+        self._moon_step: tuple[int, bool] | None = None
         self._blossom_pixels: list[tuple[int, int]] = []
         self._snow: list[tuple[int, int, float]] = []
         self._ground: list[int] = []
@@ -344,7 +346,7 @@ class NightSky(Widget):
             for i, pattern in enumerate(KOI_PATTERNS):
                 kx = cx + rx * (i - 1) * 0.4
                 self._koi.append(Koi(kx, cy / 2, pattern, koi_rng))
-        self._moon_step = -1
+        self._moon_step = None
         self._star_cells = {}
         self._strips = [None] * h
 
@@ -535,7 +537,7 @@ class NightSky(Widget):
         r = max(7.0, min(sw * 0.07, sh * 0.12))
         return int(sw * 0.8), int(sh * 0.2 + r * 0.5), r
 
-    def _apply_moon(self, step: int) -> None:
+    def _apply_moon(self, step: int, waxing: bool) -> None:
         """Rebuild the display grid with the moon at the given phase step."""
         bg = [row[:] for row in self._static]
         if not bg:
@@ -558,9 +560,11 @@ class NightSky(Widget):
                 d = math.hypot(dx, dy) / r
                 if d <= 1:
                     u, v = dx / r, dy / r
-                    # waning moon: terminator sweeps right-to-left
+                    # The terminator sweeps right-to-left either way: a waning moon
+                    # is lit left of it, a waxing moon right of it
                     terminator = math.cos(phi) * math.sqrt(max(0.0, 1 - v * v))
-                    lit_amt = (terminator - u) * r * 0.35 + 0.5
+                    edge = u + terminator if waxing else terminator - u
+                    lit_amt = edge * r * 0.35 + 0.5
                     lit = mix(MOON_LIT, MOON_LIMB, d**3)
                     dark = MOON_DARK
                     for cu, cv, cr in CRATERS:
@@ -585,7 +589,7 @@ class NightSky(Widget):
         self._bg = bg
         self._quad = [[] for _ in range(sh // 2)]
         self._compose_rows(range(sh // 2))
-        self._moon_step = step
+        self._moon_step = (step, waxing)
 
     def _compose_rows(self, qrows) -> None:
         """Rebuild display rows from the moonlit background with the tree layered on top."""
@@ -618,8 +622,8 @@ class NightSky(Widget):
 
         dirty: set[int] = set()
         step = round(self.progress * MOON_STEPS)
-        if step != self._moon_step:
-            self._apply_moon(step)
+        if (step, self.waxing) != self._moon_step:
+            self._apply_moon(step, self.waxing)
             dirty.update(range(h))
 
         self._frame += 1
@@ -742,7 +746,7 @@ class NightSky(Widget):
         w = self.size.width
         if (
             (w, self.size.height) != self._scene_size
-            or self._moon_step < 0
+            or self._moon_step is None
             or y >= len(self._strips)
         ):
             return Strip.blank(w, self._style(None, BASE))
